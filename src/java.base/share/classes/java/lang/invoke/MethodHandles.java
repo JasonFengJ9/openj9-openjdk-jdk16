@@ -2599,7 +2599,8 @@ assertEquals("[x, y]", MH_asList.invoke("x", "y").toString());
          */
         public MethodHandle findStatic(Class<?> refc, String name, MethodType type) throws NoSuchMethodException, IllegalAccessException {
             MemberName method = resolveOrFail(REF_invokeStatic, refc, name, type);
-            return getDirectMethod(REF_invokeStatic, refc, method, findBoundCallerLookup(method));
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this,
+                getDirectMethod(REF_invokeStatic, refc, method, findBoundCallerLookup(method)));
         }
 
         /**
@@ -2691,7 +2692,8 @@ assertEquals("", (String) MH_newString.invokeExact());
             }
             byte refKind = (refc.isInterface() ? REF_invokeInterface : REF_invokeVirtual);
             MemberName method = resolveOrFail(refKind, refc, name, type);
-            return getDirectMethod(refKind, refc, method, findBoundCallerLookup(method));
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this,
+                getDirectMethod(refKind, refc, method, findBoundCallerLookup(method)));
         }
         private MethodHandle findVirtualForMH(String name, MethodType type) {
             // these names require special lookups because of the implicit MethodType argument
@@ -3001,7 +3003,8 @@ assertEquals(""+l, (String) MH_this.invokeExact(subl)); // Listie method
             checkSpecialCaller(specialCaller, refc);
             Lookup specialLookup = this.in(specialCaller);
             MemberName method = specialLookup.resolveOrFail(REF_invokeSpecial, refc, name, type);
-            return specialLookup.getDirectMethod(REF_invokeSpecial, refc, method, findBoundCallerLookup(method));
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this,
+                specialLookup.getDirectMethod(REF_invokeSpecial, refc, method, findBoundCallerLookup(method)));
         }
 
         /**
@@ -3309,7 +3312,7 @@ return mh1;
                                                  " is not assignable from receiver class " +
                                                  receiver.getClass().getName());
             }
-            return mh.bindArgumentL(0, receiver).setVarargs(method);
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this, mh.bindArgumentL(0, receiver).setVarargs(method));
         }
 
         /**
@@ -3354,7 +3357,8 @@ return mh1;
             assert(method.isMethod());
             @SuppressWarnings("deprecation")
             Lookup lookup = m.isAccessible() ? IMPL_LOOKUP : this;
-            return lookup.getDirectMethodNoSecurityManager(refKind, method.getDeclaringClass(), method, findBoundCallerLookup(method));
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this,
+                lookup.getDirectMethodNoSecurityManager(refKind, method.getDeclaringClass(), method, findBoundCallerLookup(method)));
         }
         private MethodHandle unreflectForMH(Method m) {
             // these names require special lookups because they throw UnsupportedOperationException
@@ -3405,7 +3409,8 @@ return mh1;
             MemberName method = new MemberName(m, true);
             assert(method.isMethod());
             // ignore m.isAccessible:  this is a new kind of access
-            return specialLookup.getDirectMethodNoSecurityManager(REF_invokeSpecial, method.getDeclaringClass(), method, findBoundCallerLookup(method));
+            return SecurityFrameInjector.wrapHandleWithInjectedSecurityFrameIfRequired(this,
+                specialLookup.getDirectMethodNoSecurityManager(REF_invokeSpecial, method.getDeclaringClass(), method, findBoundCallerLookup(method)));
         }
 
         /**
@@ -5754,6 +5759,10 @@ assertEquals("[top, [[up, down, strange], charm], bottom]",
         MethodType filterType = filter.type();
         Class<?> rtype = filterType.returnType();
         List<Class<?>> filterArgs = filterType.parameterList();
+        if (pos < 0 || (rtype == void.class && pos > targetType.parameterCount()) ||
+                       (rtype != void.class && pos >= targetType.parameterCount())) {
+            throw newIllegalArgumentException("position is out of range for target", target, pos);
+        }
         if (rtype == void.class) {
             return targetType.insertParameterTypes(pos, filterArgs);
         }
@@ -6681,6 +6690,7 @@ assertEquals("boojum", (String) catTrace.invokeExact("boo", "jum"));
                 pred.set(i, dropArguments0(constant(boolean.class, true), 0, commonParameterSequence));
             }
             if (fini.get(i) == null) {
+//            	fini.set(i, empty(methodType(t, commonParameterSequence)));
                 fini.set(i, empty(methodType(loopReturnType, commonParameterSequence)));
             }
         }
